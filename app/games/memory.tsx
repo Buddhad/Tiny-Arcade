@@ -9,8 +9,12 @@ import { getBest, maybeSaveBest } from "../../src/utils/scores";
 import { useTheme } from "../../src/components/ThemeProvider";
 import type { Theme } from "../../src/utils/themes";
 
-// IMPORT THE WRAPPERS: Metro will load the correct file automatically (.web or .native)
-import { setupInterstitial, showInterstitialAd } from "../../src/AdInterstitial";
+// IMPORT THE WRAPPERS: We added AdBannerView to the imported modules list here
+import {
+  setupInterstitial,
+  showInterstitialAd,
+  AdBannerView,
+} from "../../src/AdInterstitial";
 
 const EMOJIS = ["🍎", "🌟", "🎈", "🍕", "🐱", "🚀", "🌈", "🍩"];
 
@@ -42,7 +46,13 @@ function buildDeck(): Card[] {
 
 export default function MemoryScreen() {
   const { theme } = useTheme();
-  const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
+  const {
+    colors: COLORS,
+    shadow: SHADOW,
+    shadowNone: SHADOW_NONE,
+    radius: RADIUS,
+    spacing: SPACING,
+  } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [deck, setDeck] = useState<Card[]>(() => buildDeck());
   const [picks, setPicks] = useState<number[]>([]);
@@ -50,17 +60,14 @@ export default function MemoryScreen() {
   const [lock, setLock] = useState(false);
   const [best, setBest] = useState<number | null>(null);
 
-  // States to keep track of game counts and ad readiness
   const [gamesPlayed, setGamesPlayed] = useState(0);
   const [adLoaded, setAdLoaded] = useState(false);
 
   const allMatched = useMemo(() => deck.every((c) => c.matched), [deck]);
 
-  // Handle ad setup and tracking using the abstracted file wrappers
   useEffect(() => {
     const cleanAdListeners = setupInterstitial(setAdLoaded);
     getBest("memory").then(setBest);
-    
     return () => {
       if (cleanAdListeners) cleanAdListeners();
     };
@@ -79,9 +86,7 @@ export default function MemoryScreen() {
     const nextGameCount = gamesPlayed + 1;
     setGamesPlayed(nextGameCount);
 
-    // Triggers the interstitial ad logic through the isolated platform module safely
     showInterstitialAd(nextGameCount, adLoaded);
-
     setDeck(buildDeck());
     setPicks([]);
     setMoves(0);
@@ -124,80 +129,125 @@ export default function MemoryScreen() {
     }
   };
 
+  // MODIFIED LAYOUT: Wrapped the GameShell container inside a flex row to cleanly attach the banner layout floor
   return (
-    <GameShell title="Memory Match" accent={COLORS.games.memory} onRestart={reset}>
-      <View style={styles.headerRow}>
-        <View style={styles.pill}>
-          <Text style={styles.pillLabel}>Moves</Text>
-          <Text testID="memory-moves" style={styles.pillValue}>
-            {moves}
-          </Text>
-        </View>
-        <View style={[styles.pill, { backgroundColor: COLORS.games.memory }]}>
-          <Text style={[styles.pillLabel, { color: COLORS.surface }]}>Pairs</Text>
-          <Text style={[styles.pillValue, { color: COLORS.surface }]} testID="memory-pairs">
-            {deck.filter((c) => c.matched).length / 2}/{EMOJIS.length}
-          </Text>
-        </View>
-      </View>
-      {best !== null && (
-        <View style={styles.bestPill}>
-          <Ionicons name="trophy" size={14} color={COLORS.textPrimary} />
-          <Text style={styles.bestText} testID="memory-best">
-            Best: {best} moves
-          </Text>
-        </View>
-      )}
-      <View style={styles.grid} testID="memory-grid">
-        {deck.map((card, idx) => {
-          const showFace = card.flipped || card.matched;
-          return (
-            <Pressable
-              key={card.id}
-              testID={`memory-card-${idx}`}
-              onPress={() => handlePick(idx)}
-              style={({ pressed }) => [
-                styles.card,
-                showFace ? styles.cardFront : styles.cardBack,
-                card.matched && styles.cardMatched,
-                pressed && !showFace && styles.pressed,
-              ]}
+    <View style={{ flex: 1, justifyContent: "space-between" }}>
+      <View style={{ flex: 1 }}>
+        <GameShell
+          title="Memory Match"
+          accent={COLORS.games.memory}
+          onRestart={reset}
+        >
+          <View style={styles.headerRow}>
+            <View style={styles.pill}>
+              <Text style={styles.pillLabel}>Moves</Text>
+              <Text testID="memory-moves" style={styles.pillValue}>
+                {moves}
+              </Text>
+            </View>
+            <View
+              style={[styles.pill, { backgroundColor: COLORS.games.memory }]}
             >
-              <Text style={[styles.cardEmoji, !showFace && styles.hidden]}>{card.emoji}</Text>
-              {!showFace && <Text style={styles.cardBackMark}>?</Text>}
-            </Pressable>
-          );
-        })}
-      </View>
-      {allMatched && (
-        <View style={styles.winBanner} testID="memory-win">
-          <Text style={styles.winTitle}>You did it! 🎉</Text>
-          <Text style={styles.winSub}>Finished in {moves} moves</Text>
-          <View style={styles.endRow}>
-            <Pressable
-              testID="memory-play-again"
-              onPress={reset}
-              style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}
-            >
-              <Text style={styles.playAgainText}>Play again</Text>
-            </Pressable>
-            <ShareButton
-              game="Memory Match"
-              line={`I matched all 8 pairs in ${moves} moves on Tiny Arcade 🧠`}
-              color={COLORS.games.memory}
-              testID="memory-share"
-            />
+              <Text style={[styles.pillLabel, { color: COLORS.surface }]}>
+                Pairs
+              </Text>
+              <Text
+                style={[styles.pillValue, { color: COLORS.surface }]}
+                testID="memory-pairs"
+              >
+                {deck.filter((c) => c.matched).length / 2}/{EMOJIS.length}
+              </Text>
+            </View>
           </View>
-        </View>
-      )}
-    </GameShell>
+          {best !== null && (
+            <View style={styles.bestPill}>
+              <Ionicons name="trophy" size={14} color={COLORS.textPrimary} />
+              <Text style={styles.bestText} testID="memory-best">
+                Best: {best} moves
+              </Text>
+            </View>
+          )}
+          <View style={styles.grid} testID="memory-grid">
+            {deck.map((card, idx) => {
+              const showFace = card.flipped || card.matched;
+              return (
+                <Pressable
+                  key={card.id}
+                  testID={`memory-card-${idx}`}
+                  onPress={() => handlePick(idx)}
+                  style={({ pressed }) => [
+                    styles.card,
+                    showFace ? styles.cardFront : styles.cardBack,
+                    card.matched && styles.cardMatched,
+                    pressed && !showFace && styles.pressed,
+                  ]}
+                >
+                  {/* Show ONLY the emoji if face up, otherwise show ONLY the question mark */}
+                  {showFace ? (
+                    <Text style={styles.cardEmoji}>{card.emoji}</Text>
+                  ) : (
+                    <Text style={styles.cardBackMark}>?</Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+          {allMatched && (
+            <View style={styles.winBanner} testID="memory-win">
+              <Text style={styles.winTitle}>You did it! 🎉</Text>
+              <Text style={styles.winSub}>Finished in {moves} moves</Text>
+              <View style={styles.endRow}>
+                <Pressable
+                  testID="memory-play-again"
+                  onPress={reset}
+                  style={({ pressed }) => [
+                    styles.playAgain,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.playAgainText}>Play again</Text>
+                </Pressable>
+                <ShareButton
+                  game="Memory Match"
+                  line={`I matched all 8 pairs in ${moves} moves on Tiny Arcade 🧠`}
+                  color={COLORS.games.memory}
+                  testID="memory-share"
+                />
+              </View>
+            </View>
+          )}
+        </GameShell>
+      </View>
+
+      {/* ADDED: Structural footer element wrapping the safe multiplatform ad views banner strip */}
+      <View
+        style={{
+          alignItems: "center",
+          width: "100%",
+          paddingBottom: 10,
+          backgroundColor: "transparent",
+        }}
+      >
+        <AdBannerView />
+      </View>
+    </View>
   );
 }
 
 function makeStyles(t: Theme) {
-  const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = t;
+  const {
+    colors: COLORS,
+    shadow: SHADOW,
+    shadowNone: SHADOW_NONE,
+    radius: RADIUS,
+    spacing: SPACING,
+  } = t;
   return StyleSheet.create({
-    headerRow: { flexDirection: "row", gap: SPACING.md, marginBottom: SPACING.sm },
+    headerRow: {
+      flexDirection: "row",
+      gap: SPACING.md,
+      marginBottom: SPACING.sm,
+    },
     pill: {
       flex: 1,
       borderWidth: 3,
@@ -208,7 +258,12 @@ function makeStyles(t: Theme) {
       paddingHorizontal: 14,
       ...SHADOW,
     },
-    pillLabel: { fontSize: 11, fontWeight: "800", color: COLORS.textSecondary, letterSpacing: 1 },
+    pillLabel: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: COLORS.textSecondary,
+      letterSpacing: 1,
+    },
     pillValue: { fontSize: 20, fontWeight: "900", color: COLORS.textPrimary },
     bestPill: {
       alignSelf: "center",
@@ -224,13 +279,23 @@ function makeStyles(t: Theme) {
       marginBottom: SPACING.md,
     },
     bestText: { fontWeight: "800", fontSize: 12, color: COLORS.surface },
-    grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      justifyContent: "center",
+      // Locks the width so exactly 4 cards fit per row (72px card width * 4 + gaps)
+      maxWidth: 320,
+      alignSelf: "center",
+      marginTop: 10,
+    },
     card: {
       width: 72,
       height: 72,
       borderWidth: 3,
       borderColor: COLORS.border,
       borderRadius: RADIUS.md,
+      // ADDED/VERIFIED: Force all child elements (emojis or text) to align dead center
       alignItems: "center",
       justifyContent: "center",
       ...SHADOW,
@@ -243,7 +308,14 @@ function makeStyles(t: Theme) {
     cardFront: { backgroundColor: COLORS.surface },
     cardMatched: { opacity: 0.55 },
     cardEmoji: { fontSize: 34 },
-    cardBackMark: { fontSize: 26, fontWeight: "900", color: COLORS.surface },
+    cardBackMark: {
+      fontSize: 26,
+      fontWeight: "900",
+      color: COLORS.surface, // ADDED: Force center line-height matching for the string text block
+      textAlign: "center",
+      textAlignVertical: "center",
+      includeFontPadding: false,
+    },
     hidden: { opacity: 0 },
     winBanner: { alignItems: "center", marginTop: SPACING.xl, gap: 6 },
     winTitle: { fontSize: 28, fontWeight: "900", color: COLORS.textPrimary },
