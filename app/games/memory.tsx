@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { InterstitialAd, AdEventType } from "react-native-google-mobile-ads";
 
 import GameShell from "../../src/components/GameShell";
 import ShareButton from "../../src/components/ShareButton";
@@ -10,6 +11,12 @@ import { useTheme } from "../../src/components/ThemeProvider";
 import type { Theme } from "../../src/utils/themes";
 
 const EMOJIS = ["🍎", "🌟", "🎈", "🍕", "🐱", "🚀", "🌈", "🍩"];
+
+// Initialize Interstitial Ad with your Live AdMob Unit ID
+const AD_UNIT_ID = "ca-app-pub-9234471974778013/4132719686";
+const interstitial = InterstitialAd.createForAdRequest(AD_UNIT_ID, {
+  requestNonPersonalizedAdsOnly: true,
+});
 
 type Card = {
   id: number;
@@ -22,7 +29,7 @@ function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [a[ i], a[ j]] = [a[ j], a[ i]];
   }
   return a;
 }
@@ -41,13 +48,36 @@ export default function MemoryScreen() {
   const { theme } = useTheme();
   const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  
   const [deck, setDeck] = useState<Card[]>(() => buildDeck());
   const [picks, setPicks] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
   const [lock, setLock] = useState(false);
   const [best, setBest] = useState<number | null>(null);
+  
+  // Track consecutive game completions
+  const [gamesPlayed, setGamesPlayed] = useState(0);
+  const [adLoaded, setAdLoaded] = useState(false);
 
   const allMatched = useMemo(() => deck.every((c) => c.matched), [deck]);
+
+  // Handle Ad Loading and Reloading Lifecycle
+  useEffect(() => {
+    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
+      setAdLoaded(true);
+    });
+
+    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      setAdLoaded(false);
+      interstitial.load(); // Automatically preload the next ad in the background
+    });
+
+    interstitial.load();
+    return () => {
+      unsubscribeLoaded();
+      unsubscribeClosed();
+    };
+  }, []);
 
   useEffect(() => {
     getBest("memory").then(setBest);
@@ -60,10 +90,17 @@ export default function MemoryScreen() {
         if (saved) setBest(moves);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMatched]);
 
   const reset = () => {
+    const nextGameCount = gamesPlayed + 1;
+    setGamesPlayed(nextGameCount);
+
+    // Show the full-screen interstitial ad on every 3rd completed round
+    if (nextGameCount % 3 === 0 && adLoaded) {
+      interstitial.show();
+    }
+
     setDeck(buildDeck());
     setPicks([]);
     setMoves(0);
@@ -80,7 +117,6 @@ export default function MemoryScreen() {
     setDeck(next);
     const newPicks = [...picks, idx];
     setPicks(newPicks);
-
     if (newPicks.length === 2) {
       setMoves((m) => m + 1);
       const [a, b] = newPicks;
@@ -123,7 +159,6 @@ export default function MemoryScreen() {
           </Text>
         </View>
       </View>
-
       {best !== null && (
         <View style={styles.bestPill}>
           <Ionicons name="trophy" size={14} color={COLORS.textPrimary} />
@@ -132,7 +167,6 @@ export default function MemoryScreen() {
           </Text>
         </View>
       )}
-
       <View style={styles.grid} testID="memory-grid">
         {deck.map((card, idx) => {
           const showFace = card.flipped || card.matched;
@@ -154,7 +188,6 @@ export default function MemoryScreen() {
           );
         })}
       </View>
-
       {allMatched && (
         <View style={styles.winBanner} testID="memory-win">
           <Text style={styles.winTitle}>You did it! 🎉</Text>
@@ -183,74 +216,74 @@ export default function MemoryScreen() {
 function makeStyles(t: Theme) {
   const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = t;
   return StyleSheet.create({
-  headerRow: { flexDirection: "row", gap: SPACING.md, marginBottom: SPACING.sm },
-  pill: {
-    flex: 1,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    ...SHADOW,
-  },
-  pillLabel: { fontSize: 11, fontWeight: "800", color: COLORS.textSecondary, letterSpacing: 1 },
-  pillValue: { fontSize: 20, fontWeight: "900", color: COLORS.textPrimary },
-  bestPill: {
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: COLORS.games.memory,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    marginBottom: SPACING.md,
-  },
-  bestText: { fontWeight: "800", fontSize: 12, color: COLORS.surface },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
-  card: {
-    width: 72,
-    height: 72,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    ...SHADOW,
-  },
-  pressed: {
-    transform: [{ translateX: 3 }, { translateY: 3 }],
-    ...SHADOW_NONE,
-  },
-  cardBack: { backgroundColor: COLORS.games.memory },
-  cardFront: { backgroundColor: COLORS.surface },
-  cardMatched: { opacity: 0.55 },
-  cardEmoji: { fontSize: 34 },
-  cardBackMark: { fontSize: 26, fontWeight: "900", color: COLORS.surface },
-  hidden: { opacity: 0 },
-  winBanner: { alignItems: "center", marginTop: SPACING.xl, gap: 6 },
-  winTitle: { fontSize: 28, fontWeight: "900", color: COLORS.textPrimary },
-  winSub: { fontSize: 14, fontWeight: "700", color: COLORS.textSecondary },
-  endRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.md,
-    alignItems: "center",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  playAgain: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: COLORS.games.memory,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    ...SHADOW,
-  },
-  playAgainText: { fontSize: 15, fontWeight: "900", color: COLORS.surface },
-});
+    headerRow: { flexDirection: "row", gap: SPACING.md, marginBottom: SPACING.sm },
+    pill: {
+      flex: 1,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: RADIUS.lg,
+      backgroundColor: COLORS.surface,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      ...SHADOW,
+    },
+    pillLabel: { fontSize: 11, fontWeight: "800", color: COLORS.textSecondary, letterSpacing: 1 },
+    pillValue: { fontSize: 20, fontWeight: "900", color: COLORS.textPrimary },
+    bestPill: {
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      backgroundColor: COLORS.games.memory,
+      borderWidth: 2,
+      borderColor: COLORS.border,
+      borderRadius: 999,
+      marginBottom: SPACING.md,
+    },
+    bestText: { fontWeight: "800", fontSize: 12, color: COLORS.surface },
+    grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+    card: {
+      width: 72,
+      height: 72,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: RADIUS.md,
+      alignItems: "center",
+      justifyContent: "center",
+      ...SHADOW,
+    },
+    pressed: {
+      transform: [{ translateX: 3 }, { translateY: 3 }],
+      ...SHADOW_NONE,
+    },
+    cardBack: { backgroundColor: COLORS.games.memory },
+    cardFront: { backgroundColor: COLORS.surface },
+    cardMatched: { opacity: 0.55 },
+    cardEmoji: { fontSize: 34 },
+    cardBackMark: { fontSize: 26, fontWeight: "900", color: COLORS.surface },
+    hidden: { opacity: 0 },
+    winBanner: { alignItems: "center", marginTop: SPACING.xl, gap: 6 },
+    winTitle: { fontSize: 28, fontWeight: "900", color: COLORS.textPrimary },
+    winSub: { fontSize: 14, fontWeight: "700", color: COLORS.textSecondary },
+    endRow: {
+      flexDirection: "row",
+      gap: SPACING.sm,
+      marginTop: SPACING.md,
+      alignItems: "center",
+      flexWrap: "wrap",
+      justifyContent: "center",
+    },
+    playAgain: {
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      backgroundColor: COLORS.games.memory,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: 999,
+      ...SHADOW,
+    },
+    playAgainText: { fontSize: 15, fontWeight: "900", color: COLORS.surface },
+  });
 }
