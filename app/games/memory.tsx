@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { InterstitialAd, AdEventType } from "react-native-google-mobile-ads";
 
 import GameShell from "../../src/components/GameShell";
 import ShareButton from "../../src/components/ShareButton";
@@ -10,13 +9,10 @@ import { getBest, maybeSaveBest } from "../../src/utils/scores";
 import { useTheme } from "../../src/components/ThemeProvider";
 import type { Theme } from "../../src/utils/themes";
 
-const EMOJIS = ["🍎", "🌟", "🎈", "🍕", "🐱", "🚀", "🌈", "🍩"];
+// IMPORT THE WRAPPERS: Metro will load the correct file automatically (.web or .native)
+import { setupInterstitial, showInterstitialAd } from "../../src/AdInterstitial";
 
-// Initialize Interstitial Ad with your Live AdMob Unit ID
-const AD_UNIT_ID = "ca-app-pub-9234471974778013/4132719686";
-const interstitial = InterstitialAd.createForAdRequest(AD_UNIT_ID, {
-  requestNonPersonalizedAdsOnly: true,
-});
+const EMOJIS = ["🍎", "🌟", "🎈", "🍕", "🐱", "🚀", "🌈", "🍩"];
 
 type Card = {
   id: number;
@@ -29,7 +25,7 @@ function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[ i], a[ j]] = [a[ j], a[ i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
@@ -48,39 +44,26 @@ export default function MemoryScreen() {
   const { theme } = useTheme();
   const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  
   const [deck, setDeck] = useState<Card[]>(() => buildDeck());
   const [picks, setPicks] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
   const [lock, setLock] = useState(false);
   const [best, setBest] = useState<number | null>(null);
-  
-  // Track consecutive game completions
+
+  // States to keep track of game counts and ad readiness
   const [gamesPlayed, setGamesPlayed] = useState(0);
   const [adLoaded, setAdLoaded] = useState(false);
 
   const allMatched = useMemo(() => deck.every((c) => c.matched), [deck]);
 
-  // Handle Ad Loading and Reloading Lifecycle
+  // Handle ad setup and tracking using the abstracted file wrappers
   useEffect(() => {
-    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
-      setAdLoaded(true);
-    });
-
-    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-      setAdLoaded(false);
-      interstitial.load(); // Automatically preload the next ad in the background
-    });
-
-    interstitial.load();
-    return () => {
-      unsubscribeLoaded();
-      unsubscribeClosed();
-    };
-  }, []);
-
-  useEffect(() => {
+    const cleanAdListeners = setupInterstitial(setAdLoaded);
     getBest("memory").then(setBest);
+    
+    return () => {
+      if (cleanAdListeners) cleanAdListeners();
+    };
   }, []);
 
   useEffect(() => {
@@ -96,10 +79,8 @@ export default function MemoryScreen() {
     const nextGameCount = gamesPlayed + 1;
     setGamesPlayed(nextGameCount);
 
-    // Show the full-screen interstitial ad on every 3rd completed round
-    if (nextGameCount % 3 === 0 && adLoaded) {
-      interstitial.show();
-    }
+    // Triggers the interstitial ad logic through the isolated platform module safely
+    showInterstitialAd(nextGameCount, adLoaded);
 
     setDeck(buildDeck());
     setPicks([]);
