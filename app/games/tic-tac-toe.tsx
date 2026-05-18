@@ -9,6 +9,9 @@ import { getBest, maybeSaveBest } from "../../src/utils/scores";
 import { useTheme } from "../../src/components/ThemeProvider";
 import type { Theme } from "../../src/utils/themes";
 
+// IMPORT THE WRAPPERS: Connecting your multiplatform crash-free module imports
+import { setupInterstitial, showInterstitialAd, AdBannerView } from "../../src/AdInterstitial";
+
 type Cell = "X" | "O" | null;
 type Mode = "cpu" | "2p";
 
@@ -31,7 +34,6 @@ function checkWinner(b: Cell[]): { winner: Cell; line: number[] | null } {
   return { winner: null, line: null };
 }
 
-// Minimax — CPU is "O", player is "X"
 function minimax(board: Cell[], isMax: boolean): number {
   const { winner } = checkWinner(board);
   if (winner === "O") return 1;
@@ -50,10 +52,11 @@ function minimax(board: Cell[], isMax: boolean): number {
   return best;
 }
 
-function pickCpuMove(board: Cell[]): number {  
+function pickCpuMove(board: Cell[]): number {
   let bestScore = -Infinity;
   let bestMove = -1;
   const candidates: number[] = [];
+
   for (let i = 0; i < 9; i++) {
     if (!board[i]) {
       board[i] = "O";
@@ -69,7 +72,7 @@ function pickCpuMove(board: Cell[]): number {
       }
     }
   }
-  // pick randomly among equally-good moves for variety
+
   return candidates.length
     ? candidates[Math.floor(Math.random() * candidates.length)]
     : bestMove;
@@ -79,33 +82,43 @@ export default function TicTacToeScreen() {
   const { theme } = useTheme();
   const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
+
   const [mode, setMode] = useState<Mode>("cpu");
   const [board, setBoard] = useState<Cell[]>(Array(9).fill(null));
   const [turn, setTurn] = useState<"X" | "O">("X");
   const [tally, setTally] = useState({ wins: 0, losses: 0, draws: 0 });
   const [bestWins, setBestWins] = useState<number | null>(null);
 
+  // ADDED: Local lifecycle state handlers tracking consecutive game milestones
+  const [gamesPlayed, setGamesPlayed] = useState(0);
+  const [adLoaded, setAdLoaded] = useState(false);
+
   const { winner, line } = useMemo(() => checkWinner(board), [board]);
   const isDraw = !winner && board.every(Boolean);
 
+  // CHANGED: Combined score retrieval logic with native ad listener registers
   useEffect(() => {
+    const cleanAdListeners = setupInterstitial(setAdLoaded);
     getBest("tic-tac-toe").then(setBestWins);
+    
+    return () => {
+      if (cleanAdListeners) cleanAdListeners();
+    };
   }, []);
 
-  // CPU move trigger
   useEffect(() => {
     if (mode !== "cpu") return;
     if (winner || isDraw) return;
     if (turn !== "O") return;
+
     const id = setTimeout(() => {
       const move = pickCpuMove(board.slice());
       if (move >= 0) playAt(move, "O");
     }, 420);
+
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, mode, board, winner, isDraw]);
 
-  // React to game end → update tally + best in cpu mode
   useEffect(() => {
     if (mode !== "cpu") return;
     if (winner === "X") {
@@ -121,7 +134,6 @@ export default function TicTacToeScreen() {
     } else if (isDraw) {
       setTally((t) => ({ ...t, draws: t.draws + 1 }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [winner, isDraw]);
 
   const playAt = (i: number, who: "X" | "O") => {
@@ -145,12 +157,19 @@ export default function TicTacToeScreen() {
   };
 
   const newRound = () => {
+    const nextGameCount = gamesPlayed + 1;
+    setGamesPlayed(nextGameCount);
+
+    // ADDED: Invokes interstitial screen sequence overlay on every 3rd next round invocation
+    showInterstitialAd(nextGameCount, adLoaded);
+
     setBoard(Array(9).fill(null));
     setTurn("X");
   };
 
   const fullReset = () => {
-    newRound();
+    setBoard(Array(9).fill(null));
+    setTurn("X");
     setTally({ wins: 0, losses: 0, draws: 0 });
   };
 
@@ -160,120 +179,130 @@ export default function TicTacToeScreen() {
         ? "You win! 🎉"
         : "Player X wins!"
       : winner === "O"
-        ? mode === "cpu"
-          ? "CPU wins"
-          : "Player O wins!"
-        : isDraw
-          ? "It's a draw"
-          : mode === "cpu"
-            ? turn === "X"
-              ? "Your turn (X)"
-              : "CPU thinking…"
-            : `Player ${turn}'s turn`;
+      ? mode === "cpu"
+        ? "CPU wins"
+        : "Player O wins!"
+      : isDraw
+      ? "It's a draw"
+      : mode === "cpu"
+      ? turn === "X"
+        ? "Your turn (X)"
+        : "CPU thinking…"
+      : `Player ${turn}'s turn`;
 
+  // MODIFIED LAYOUT STYLE: Unified root wrap elements ensuring banner locks neatly below game boundaries
   return (
-    <GameShell title="Tic Tac Toe" accent={COLORS.games.ticTacToe} onRestart={fullReset}>
-      <View style={styles.modeRow}>
-        <ModeBtn
-          active={mode === "cpu"}
-          label="Solo (CPU)"
-          icon="hardware-chip-outline"
-          onPress={() => {
-            feedback.tap();
-            setMode("cpu");
-            fullReset();
-          }}
-          testID="ttt-mode-cpu"
-        />
-        <ModeBtn
-          active={mode === "2p"}
-          label="2 Players"
-          icon="people-outline"
-          onPress={() => {
-            feedback.tap();
-            setMode("2p");
-            fullReset();
-          }}
-          testID="ttt-mode-2p"
-        />
-      </View>
-
-      {mode === "cpu" && (
-        <View style={styles.tallyRow}>
-          <TallyBox label="WINS" value={tally.wins} color={COLORS.accent.green} testID="ttt-wins" />
-          <TallyBox label="DRAWS" value={tally.draws} color={COLORS.surface} testID="ttt-draws" />
-          <TallyBox label="LOSSES" value={tally.losses} color={COLORS.accent.pink} testID="ttt-losses" />
-        </View>
-      )}
-
-      {bestWins !== null && bestWins > 0 && mode === "cpu" && (
-        <View style={styles.bestPill}>
-          <Ionicons name="trophy" size={14} color={COLORS.textPrimary} />
-          <Text style={styles.bestText} testID="ttt-best">
-            Best win streak: {bestWins}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.statusWrap}>
-        <Text testID="ttt-status" style={styles.statusText}>
-          {status}
-        </Text>
-      </View>
-
-      <View style={styles.boardWrap}>
-        <View style={styles.board} testID="ttt-board">
-          {board.map((cell, i) => {
-            const winning = line?.includes(i);
-            return (
-              <Pressable
-                key={i}
-                testID={`ttt-cell-${i}`}
-                onPress={() => handlePress(i)}
-                style={({ pressed }) => [
-                  styles.cell,
-                  winning && { backgroundColor: COLORS.games.ticTacToe },
-                  pressed && !cell && styles.cellPressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.mark,
-                    cell === "X" && { color: COLORS.accent.pink },
-                    cell === "O" && { color: COLORS.accent.blue },
-                  ]}
-                >
-                  {cell ?? ""}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {(winner || isDraw) && (
-        <View style={styles.endRow}>
-          <Pressable
-            testID="ttt-play-again"
-            onPress={() => {
-              feedback.tap();
-              newRound();
-            }}
-            style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}
-          >
-            <Text style={styles.playAgainText}>Next round</Text>
-          </Pressable>
-          {mode === "cpu" && winner === "X" && (
-            <ShareButton
-              game="Tic Tac Toe"
-              line={`I just beat the Tiny Arcade CPU at Tic Tac Toe! 🏆 Streak: ${tally.wins}`}
-              color={COLORS.games.ticTacToe}
-              testID="ttt-share"
+    <View style={{ flex: 1, justifyContent: "space-between" }}>
+      <View style={{ flex: 1 }}>
+        <GameShell title="Tic Tac Toe" accent={COLORS.games.ticTacToe} onRestart={fullReset}>
+          <View style={styles.modeRow}>
+            <ModeBtn
+              active={mode === "cpu"}
+              label="Solo (CPU)"
+              icon="hardware-chip-outline"
+              onPress={() => {
+                feedback.tap();
+                setMode("cpu");
+                fullReset();
+              }}
+              testID="ttt-mode-cpu"
             />
+            <ModeBtn
+              active={mode === "2p"}
+              label="2 Players"
+              icon="people-outline"
+              onPress={() => {
+                feedback.tap();
+                setMode("2p");
+                fullReset();
+              }}
+              testID="ttt-mode-2p"
+            />
+          </View>
+
+          {mode === "cpu" && (
+            <View style={styles.tallyRow}>
+              <TallyBox label="WINS" value={tally.wins} color={COLORS.accent.green} testID="ttt-wins" />
+              <TallyBox label="DRAWS" value={tally.draws} color={COLORS.surface} testID="ttt-draws" />
+              <TallyBox label="LOSSES" value={tally.losses} color={COLORS.accent.pink} testID="ttt-losses" />
+            </View>
           )}
-        </View>
-      )}
-    </GameShell>
+
+          {bestWins !== null && bestWins > 0 && mode === "cpu" && (
+            <View style={styles.bestPill}>
+              <Ionicons name="trophy" size={14} color={COLORS.textPrimary} />
+              <Text style={styles.bestText} testID="ttt-best">
+                Best win streak: {bestWins}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.statusWrap}>
+            <Text testID="ttt-status" style={styles.statusText}>
+              {status}
+            </Text>
+          </View>
+
+          <View style={styles.boardWrap}>
+            <View style={styles.board} testID="ttt-board">
+              {board.map((cell, i) => {
+                const winning = line?.includes(i);
+                return (
+                  <Pressable
+                    key={i}
+                    testID={`ttt-cell-${i}`}
+                    onPress={() => handlePress(i)}
+                    style={({ pressed }) => [
+                      styles.cell,
+                      winning && { backgroundColor: COLORS.games.ticTacToe },
+                      pressed && !cell && styles.cellPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.mark,
+                        cell === "X" && { color: COLORS.accent.pink },
+                        cell === "O" && { color: COLORS.accent.blue },
+                      ]}
+                    >
+                      {cell ?? ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {(winner || isDraw) && (
+            <View style={styles.endRow}>
+              <Pressable
+                testID="ttt-play-again"
+                onPress={() => {
+                  feedback.tap();
+                  newRound();
+                }}
+                style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}
+              >
+                <Text style={styles.playAgainText}>Next round</Text>
+              </Pressable>
+              {mode === "cpu" && winner === "X" && (
+                <ShareButton
+                  game="Tic Tac Toe"
+                  line={`I just beat the Tiny Arcade CPU at Tic Tac Toe! 🏆 Streak: ${tally.wins}`}
+                  color={COLORS.games.ticTacToe}
+                  testID="ttt-share"
+                />
+              )}
+            </View>
+          )}
+        </GameShell>
+      </View>
+
+      {/* FIXED FOOTER AD POSITION: Anchored safe adaptive banner placeholder matching memory.tsx format */}
+      <View style={{ alignItems: "center", width: "100%", paddingBottom: 10, backgroundColor: "transparent" }}>
+        <AdBannerView />
+      </View>
+    </View>
   );
 }
 
@@ -289,8 +318,9 @@ function ModeBtn({
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   testID: string;
-}) {  const { theme } = useTheme();
-  const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
+}) {
+  const { theme } = useTheme();
+  const { colors: COLORS } = theme;
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   return (
@@ -319,8 +349,8 @@ function TallyBox({
   value: number;
   color: string;
   testID: string;
-}) {  const { theme } = useTheme();
-  const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = theme;
+}) {
+  const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   return (
@@ -336,88 +366,88 @@ function TallyBox({
 function makeStyles(t: Theme) {
   const { colors: COLORS, shadow: SHADOW, shadowNone: SHADOW_NONE, radius: RADIUS, spacing: SPACING } = t;
   return StyleSheet.create({
-  modeRow: { flexDirection: "row", gap: SPACING.sm, marginBottom: SPACING.md },
-  modeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
-    backgroundColor: COLORS.surface,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    ...SHADOW,
-  },
-  modeBtnLabel: { fontWeight: "800", fontSize: 13, color: COLORS.textPrimary },
-  tallyRow: { flexDirection: "row", gap: SPACING.sm, marginBottom: SPACING.sm },
-  tallyBox: {
-    flex: 1,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    paddingVertical: 8,
-    alignItems: "center",
-    ...SHADOW,
-  },
-  tallyLabel: { fontSize: 10, fontWeight: "800", color: COLORS.textPrimary, letterSpacing: 1 },
-  tallyValue: { fontSize: 20, fontWeight: "900", color: COLORS.textPrimary },
-  bestPill: {
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: COLORS.games.ticTacToe,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    marginBottom: SPACING.md,
-  },
-  bestText: { fontWeight: "800", fontSize: 12, color: COLORS.textPrimary },
-  statusWrap: { alignItems: "center", marginBottom: SPACING.md },
-  statusText: { fontSize: 18, fontWeight: "800", color: COLORS.textPrimary },
-  boardWrap: { alignItems: "center" },
-  board: { flexDirection: "row", flexWrap: "wrap", width: 312, gap: 8 },
-  cell: {
-    width: 96,
-    height: 96,
-    borderRadius: RADIUS.md,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...SHADOW,
-  },
-  cellPressed: {
-    transform: [{ translateX: 3 }, { translateY: 3 }],
-    ...SHADOW_NONE,
-  },
-  mark: { fontSize: 56, fontWeight: "900" },
-  endRow: {
-    marginTop: SPACING.lg,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: SPACING.sm,
-    flexWrap: "wrap",
-  },
-  playAgain: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: COLORS.surface,
-    borderWidth: 3,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    ...SHADOW,
-  },
-  pressed: {
-    transform: [{ translateX: 3 }, { translateY: 3 }],
-    ...SHADOW_NONE,
-  },
-  playAgainText: { fontSize: 15, fontWeight: "900", color: COLORS.textPrimary },
-});
+    modeRow: { flexDirection: "row", gap: SPACING.sm, marginBottom: SPACING.md },
+    modeBtn: {
+      flex: 1,
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 10,
+      backgroundColor: COLORS.surface,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: 999,
+      ...SHADOW,
+    },
+    modeBtnLabel: { fontWeight: "800", fontSize: 13, color: COLORS.textPrimary },
+    tallyRow: { flexDirection: "row", gap: SPACING.sm, marginBottom: SPACING.sm },
+    tallyBox: {
+      flex: 1,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: RADIUS.lg,
+      paddingVertical: 8,
+      alignItems: "center",
+      ...SHADOW,
+    },
+    tallyLabel: { fontSize: 10, fontWeight: "800", color: COLORS.textPrimary, letterSpacing: 1 },
+    tallyValue: { fontSize: 20, fontWeight: "900", color: COLORS.textPrimary },
+    bestPill: {
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      backgroundColor: COLORS.games.ticTacToe,
+      borderWidth: 2,
+      borderColor: COLORS.border,
+      borderRadius: 999,
+      marginBottom: SPACING.md,
+    },
+    bestText: { fontWeight: "800", fontSize: 12, color: COLORS.textPrimary },
+    statusWrap: { alignItems: "center", marginBottom: SPACING.md },
+    statusText: { fontSize: 18, fontWeight: "800", color: COLORS.textPrimary },
+    boardWrap: { alignItems: "center" },
+    board: { flexDirection: "row", flexWrap: "wrap", width: 312, gap: 8 },
+    cell: {
+      width: 96,
+      height: 96,
+      borderRadius: RADIUS.md,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      backgroundColor: COLORS.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      ...SHADOW,
+    },
+    cellPressed: {
+      transform: [{ translateX: 3 }, { translateY: 3 }],
+      ...SHADOW_NONE,
+    },
+    mark: { fontSize: 56, fontWeight: "900" },
+    endRow: {
+      marginTop: SPACING.lg,
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: SPACING.sm,
+      flexWrap: "wrap",
+    },
+    playAgain: {
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      backgroundColor: COLORS.surface,
+      borderWidth: 3,
+      borderColor: COLORS.border,
+      borderRadius: 999,
+      ...SHADOW,
+    },
+    pressed: {
+      transform: [{ translateX: 3 }, { translateY: 3 }],
+      ...SHADOW_NONE,
+    },
+    playAgainText: { fontSize: 15, fontWeight: "900", color: COLORS.textPrimary },
+  });
 }
