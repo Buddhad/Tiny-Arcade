@@ -6,7 +6,7 @@ import { TestIds } from 'react-native-google-mobile-ads';
  * true  -> Uses real, unique live Google AdMob IDs for publishing.
  * false -> Uses global test IDs so you can safely play and test locally without account bans.
  */
-const IS_PRODUCTION = false; 
+const IS_PRODUCTION = true; // Set to false for local testing, true for production builds
 
 export const AD_KEYS = {
   // 1. Interstitial ID Slot (Used in Memory, Tic-Tac-Toe, and RPS)
