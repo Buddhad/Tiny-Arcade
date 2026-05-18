@@ -1,8 +1,11 @@
 // src/AdRewarded.native.tsx
-import { AdEventType, RewardedAd, RewardedAdEventType, TestIds } from 'react-native-google-mobile-ads';
+import { AdEventType, RewardedAd, RewardedAdEventType } from 'react-native-google-mobile-ads';
 
-// Safe instantiation for native platforms (Android) using the Google Rewarded Test ID
-const rewarded = RewardedAd.createForAdRequest(TestIds.REWARDED, {
+// IMPORT YOUR CENTRAL AD CONFIG KEYS:
+import { AD_KEYS } from './adConfig';
+
+// CHANGED: Pulled keys dynamically from your centralized mapper configuration file
+const rewarded = RewardedAd.createForAdRequest(AD_KEYS.rewarded, {
   requestNonPersonalizedAdsOnly: true,
 });
 
@@ -15,9 +18,9 @@ export const setupRewarded = (setAdLoaded: (loaded: boolean) => void, onEarnRewa
     onEarnReward(); // Fires the game function to revive the player
   });
 
- const unsubscribeClosed = rewarded.addAdEventListener(AdEventType.CLOSED, () => {
+  const unsubscribeClosed = rewarded.addAdEventListener(AdEventType.CLOSED, () => {
     setAdLoaded(false);
-    rewarded.load(); // Preload the next rewarded video in the background
+    rewarded.load(); // Preload the next rewarded video in the background for later
   });
 
   rewarded.load();

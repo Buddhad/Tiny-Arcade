@@ -1,10 +1,13 @@
 // src/AdInterstitial.native.tsx
 import React from 'react';
-// IMPORT THE NATIVE BANNER MODULES HERE
-import { InterstitialAd, AdEventType, TestIds, BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
+// CHANGED: Removed TestIds from imports since keys are now loaded dynamically
+import { InterstitialAd, AdEventType, BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 
-// Safe instantiation for native platforms (Android/iOS)
-const interstitial = InterstitialAd.createForAdRequest(TestIds.INTERSTITIAL, {
+// IMPORT YOUR CENTRAL AD CONFIG KEYS:
+import { AD_KEYS } from './adConfig';
+
+// CHANGED: Pulled keys dynamically from your centralized mapper configuration file
+const interstitial = InterstitialAd.createForAdRequest(AD_KEYS.interstitial, {
   requestNonPersonalizedAdsOnly: true,
 });
 
@@ -32,11 +35,11 @@ export const showInterstitialAd = (gamesCount: number, adLoaded: boolean) => {
   }
 };
 
-// ADDED: Real native Google Banner view for Android / iOS physical device builds
+// Real native Google Banner view for Android / iOS physical device builds
 export const AdBannerView = () => {
   return (
     <BannerAd
-      unitId={TestIds.BANNER} // Uses safe Google test banner unit ID
+      unitId={AD_KEYS.banner} // CHANGED: Hooked up banner to pull live keys from central configuration mapper
       size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
       requestOptions={{ requestNonPersonalizedAdsOnly: true }}
     />
